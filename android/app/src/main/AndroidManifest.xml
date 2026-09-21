@@ -24,10 +24,7 @@
 
         <meta-data
             android:name="com.google.ar.core"
-            android:value="required" />
-        <meta-data
-            android:name="com.google.ar.core.min_apk_version"
-            android:value="210000000" />
+            android:value="required" /> 
 
         <activity
             android:name=".MainActivity"
