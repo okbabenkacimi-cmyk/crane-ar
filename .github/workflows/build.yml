@@ -1,0 +1,67 @@
+name: Build Android AR APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    name: Build release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.24.0'
+          channel: 'stable'
+          cache: true
+
+      - name: Flutter version info
+        run: flutter --version
+
+      - name: Bootstrap missing Flutter Android scaffolding
+        run: |
+          set -e
+          REPO_DIR="${GITHUB_WORKSPACE}"
+          cd /tmp
+          flutter create --org com.cranear --project-name crane_ar --platforms=android bootstrap_app
+          cd "${REPO_DIR}"
+          mkdir -p android/gradle/wrapper
+          cp -n /tmp/bootstrap_app/android/gradle/wrapper/gradle-wrapper.jar android/gradle/wrapper/ || true
+          cp -n /tmp/bootstrap_app/android/gradlew android/ || true
+          cp -n /tmp/bootstrap_app/android/gradlew.bat android/ || true
+          chmod +x android/gradlew || true
+          mkdir -p android/app/src/main/res
+          cp -rn /tmp/bootstrap_app/android/app/src/main/res/. android/app/src/main/res/ || true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Static analysis
+        run: flutter analyze
+        continue-on-error: true
+
+      - name: Run geometry unit tests
+        run: flutter test --reporter expanded
+
+      - name: Build release APK
+        run: flutter build apk --release
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: crane-ar-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
