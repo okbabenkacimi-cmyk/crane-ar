@@ -1,13 +1,14 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/gestures.dart';
 
 import '../../core/constants.dart';
 
-/// Hosts the native ARCore GLSurfaceView inside the Flutter tree.
+/// Hosts the native ARCore GLSurfaceView inside the Flutter tree using
+/// hybrid composition, which is required for GLSurfaceView to render.
 class ArViewWidget extends StatelessWidget {
   const ArViewWidget({super.key, this.onPlatformViewCreated});
 
@@ -22,8 +23,7 @@ class ArViewWidget extends StatelessWidget {
           child: Padding(
             padding: EdgeInsets.all(24),
             child: Text(
-              'The AR prototype currently targets Android devices with ARCore.\n'
-              'iOS / ARKit support is planned.',
+              'The AR prototype currently targets Android devices with ARCore.',
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.white70),
             ),
@@ -32,12 +32,30 @@ class ArViewWidget extends StatelessWidget {
       );
     }
 
-    return AndroidView(
+    return PlatformViewLink(
       viewType: ArChannels.arViewType,
-      creationParams: const <String, dynamic>{},
-      creationParamsCodec: const StandardMessageCodec(),
-      onPlatformViewCreated: onPlatformViewCreated,
-      gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
+      surfaceFactory: (BuildContext context, PlatformViewController controller) {
+        return AndroidViewSurface(
+          controller: controller as AndroidViewController,
+          gestureRecognizers:
+              const <Factory<OneSequenceGestureRecognizer>>{},
+          hitTestBehavior: PlatformViewHitTestBehavior.opaque,
+        );
+      },
+      onCreatePlatformView: (PlatformViewCreationParams params) {
+        return PlatformViewsService.initSurfaceAndroidView(
+          id: params.id,
+          viewType: ArChannels.arViewType,
+          layoutDirection: TextDirection.ltr,
+          creationParams: const <String, dynamic>{},
+          creationParamsCodec: const StandardMessageCodec(),
+        )
+          ..addOnPlatformViewCreatedListener(params.onPlatformViewCreated)
+          ..addOnPlatformViewCreatedListener((int id) {
+            onPlatformViewCreated?.call(id);
+          })
+          ..create();
+      },
     );
   }
 }
