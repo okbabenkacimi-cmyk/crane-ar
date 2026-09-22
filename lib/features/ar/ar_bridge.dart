@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/services.dart';
 
 import '../../core/constants.dart';
-import '../../domain/models/ar_status.dart';
 
 /// Thin, typed wrapper around the Flutter <-> native ARCore bridge.
 ///
@@ -18,21 +17,18 @@ class ArBridge {
   final MethodChannel _methods;
   final EventChannel _events;
 
-  /// Returns true when the device supports ARCore.
   Future<bool> isArCoreSupported() async {
     final bool? supported =
         await _methods.invokeMethod<bool>('checkArCoreSupport');
     return supported ?? false;
   }
 
-  /// Requests the CAMERA runtime permission. Returns true when granted.
   Future<bool> requestCameraPermission() async {
     final bool? granted =
         await _methods.invokeMethod<bool>('requestCameraPermission');
     return granted ?? false;
   }
 
-  /// Pushes the current radii into the world-space renderer.
   Future<void> setRadii({
     required double workRadius,
     required double boundaryRadius,
@@ -45,23 +41,41 @@ class ArBridge {
     });
   }
 
-  /// Clears the crane reference anchor.
+  Future<void> setBoomLength(double metres) async {
+    await _methods.invokeMethod<void>(
+      'setBoomLength',
+      <String, dynamic>{'value': metres},
+    );
+  }
+
+  Future<void> setBoundaryExtra(double metres) async {
+    await _methods.invokeMethod<void>(
+      'setBoundaryExtra',
+      <String, dynamic>{'value': metres},
+    );
+  }
+
+  Future<bool> captureBoomTip() async {
+    final bool? ok =
+        await _methods.invokeMethod<bool>('captureBoomTip');
+    return ok ?? false;
+  }
+
   Future<void> resetReference() async {
     await _methods.invokeMethod<void>('resetReference');
   }
 
-  /// Fallback: hit-test the screen centre and anchor there.
   Future<bool> confirmReferenceAtScreenCenter() async {
     final bool? placed =
         await _methods.invokeMethod<bool>('confirmReferenceAtCenter');
     return placed ?? false;
   }
 
-  /// Streaming AR status updates from the native session.
-  Stream<ArStatusSnapshot> statusStream() {
+  /// Raw event stream from the native AR session.
+  /// The controller interprets each event by its `event` field.
+  Stream<Map<dynamic, dynamic>> statusStream() {
     return _events.receiveBroadcastStream().map((dynamic event) {
-      final map = Map<dynamic, dynamic>.from(event as Map);
-      return ArStatusSnapshot.fromMap(map);
+      return Map<dynamic, dynamic>.from(event as Map);
     });
   }
 }
