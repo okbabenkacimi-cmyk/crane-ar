@@ -9,9 +9,6 @@ import android.view.MotionEvent
 import android.view.View
 import io.flutter.plugin.platform.PlatformView
 
-/**
- * Hybrid-composition PlatformView hosting the ARCore GLSurfaceView.
- */
 class ArView(private val activity: Activity) : PlatformView {
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -28,9 +25,6 @@ class ArView(private val activity: Activity) : PlatformView {
         glSurfaceView.preserveEGLContextOnPause = true
         glSurfaceView.setEGLContextClientVersion(2)
         glSurfaceView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
-
-        // FIX: Set the surface format to OPAQUE so the camera feed is visible.
-        // Previously, TRANSLUCENT made it invisible.
         glSurfaceView.holder.setFormat(PixelFormat.OPAQUE)
 
         renderer = ArRenderer(activity, sessionManager, sceneState)
@@ -52,10 +46,25 @@ class ArView(private val activity: Activity) : PlatformView {
     override fun onFlutterViewAttached(flutterView: View) {
         attached = true
         glSurfaceView.onResume()
+
+        // Try to resume the ARCore session.
         sessionManager.resume()
-        sessionManager.lastError?.let { error ->
-            postStatus(mapOf("event" to "error", "message" to error))
-        }
+
+        // Give ARCore a moment. If the session still isn't up, tell Flutter.
+        mainHandler.postDelayed({
+            if (sessionManager.session == null) {
+                val message = sessionManager.lastError
+                    ?: "AR session could not start. Check ARCore installation."
+                postStatus(mapOf("event" to "error", "message" to message))
+            } else {
+                postStatus(
+                    mapOf(
+                        "event" to "sessionReady",
+                        "message" to "AR session is running."
+                    )
+                )
+            }
+        }, 1200)
     }
 
     override fun onFlutterViewDetached() {
@@ -75,8 +84,6 @@ class ArView(private val activity: Activity) : PlatformView {
         glSurfaceView.onPause()
     }
 
-    // ---- Public methods called from MainActivity -------------------------
-
     fun updateRadii(work: Float, boundary: Float, showBoundary: Boolean) {
         sceneState.workRadius = work
         sceneState.boundaryRadius = boundary
@@ -89,7 +96,6 @@ class ArView(private val activity: Activity) : PlatformView {
 
     fun updateBoundaryExtra(v: Float) {
         sceneState.boundaryRadiusExtra = v
-        // Recompute boundary from current work radius
         sceneState.boundaryRadius = sceneState.workRadius + v
     }
 
@@ -116,12 +122,6 @@ class ArView(private val activity: Activity) : PlatformView {
         return true
     }
 
-    /**
-     * Tells the renderer to capture the current screen centre as a ray
-     * toward the boom tip. The renderer will then compute the boom tip
-     * position by intersecting the ray with a sphere of radius L (boom
-     * length) centred on the slew anchor.
-     */
     fun captureBoomTip(): Boolean {
         if (!attached) return false
         sceneState.pendingBoomTipCapture = true
