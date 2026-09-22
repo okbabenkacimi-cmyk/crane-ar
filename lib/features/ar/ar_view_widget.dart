@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/constants.dart';
@@ -37,8 +38,7 @@ class ArViewWidget extends StatelessWidget {
       surfaceFactory: (BuildContext context, PlatformViewController controller) {
         return AndroidViewSurface(
           controller: controller as AndroidViewController,
-          gestureRecognizers:
-              const <Factory<OneSequenceGestureRecognizer>>{},
+          gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
           hitTestBehavior: PlatformViewHitTestBehavior.opaque,
         );
       },
