@@ -1,7 +1,6 @@
 package com.cranear.crane_ar
 
 import android.Manifest
-import android.app.Activity
 import android.content.pm.PackageManager
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -66,6 +65,23 @@ class MainActivity : FlutterActivity() {
                     val show = call.argument<Boolean>("showBoundary") ?: true
                     ArCoreHolder.currentView?.updateRadii(work, boundary, show)
                     result.success(null)
+                }
+
+                "setBoomLength" -> {
+                    val v = (call.argument<Double>("value") ?: 20.0).toFloat()
+                    ArCoreHolder.currentView?.updateBoomLength(v)
+                    result.success(null)
+                }
+
+                "setBoundaryExtra" -> {
+                    val v = (call.argument<Double>("value") ?: 0.0).toFloat()
+                    ArCoreHolder.currentView?.updateBoundaryExtra(v)
+                    result.success(null)
+                }
+
+                "captureBoomTip" -> {
+                    val ok = ArCoreHolder.currentView?.captureBoomTip() ?: false
+                    result.success(ok)
                 }
 
                 "resetReference" -> {
