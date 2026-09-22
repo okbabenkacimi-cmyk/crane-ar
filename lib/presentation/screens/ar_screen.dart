@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../core/constants.dart';
 import '../../domain/geometry/geometry_engine.dart';
 import '../../domain/models/ar_status.dart';
 import '../../features/ar/ar_controller.dart';
@@ -10,6 +9,8 @@ import '../theme/app_theme.dart';
 import '../widgets/control_panel.dart';
 import '../widgets/readout_panel.dart';
 import '../widgets/status_banner.dart';
+
+enum _Step { placeSlewCentre, captureBoomTip, done }
 
 class ArScreen extends StatefulWidget {
   const ArScreen({super.key});
@@ -22,12 +23,18 @@ class _ArScreenState extends State<ArScreen> {
   final ArController _ar = ArController();
   final GeometryController _geometry = GeometryController();
 
+  _Step _step = _Step.placeSlewCentre;
+  double? _measuredAngleDeg;
+  double? _measuredTipHeight;
+
   @override
   void initState() {
     super.initState();
     _ar.addListener(_onArChanged);
     _geometry.addListener(_onGeometryChanged);
     _ar.startListening();
+    _ar.setBoomLength(_geometry.config.boomLength);
+    _ar.setBoundaryExtra(_geometry.config.margin);
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncRadii());
   }
 
@@ -40,9 +47,24 @@ class _ArScreenState extends State<ArScreen> {
     super.dispose();
   }
 
-  void _onArChanged() => setState(() {});
+  void _onArChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (_ar.status.hasReferencePoint && _step == _Step.placeSlewCentre) {
+      _step = _Step.captureBoomTip;
+    }
+    if (_ar.measuredAngleDeg != null) {
+      _measuredAngleDeg = _ar.measuredAngleDeg;
+      _measuredTipHeight = _ar.measuredTipHeight;
+      _step = _Step.done;
+      _geometry.setBoomAngleDegrees(_ar.measuredAngleDeg!);
+    }
+  }
+
   void _onGeometryChanged() {
     setState(() {});
+    _ar.setBoomLength(_geometry.config.boomLength);
+    _ar.setBoundaryExtra(_geometry.config.margin);
     _syncRadii();
   }
 
@@ -55,20 +77,24 @@ class _ArScreenState extends State<ArScreen> {
     );
   }
 
-  Future<void> _resetReference() async {
+  Future<void> _reset() async {
     await _ar.resetReference();
+    if (!mounted) return;
+    setState(() {
+      _step = _Step.placeSlewCentre;
+      _measuredAngleDeg = null;
+      _measuredTipHeight = null;
+    });
   }
 
-  Future<void> _confirmAtCentre() async {
-    final bool ok = await _ar.confirmReferenceAtCenter();
+  Future<void> _captureBoomTip() async {
+    final bool ok = await _ar.captureBoomTip();
     if (!mounted) return;
     if (!ok) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           backgroundColor: AppTheme.surfaceRaised,
-          content: Text(
-            'No horizontal plane at screen centre. Aim at the ground and tap.',
-          ),
+          content: Text('Could not capture boom tip — aim at the boom.'),
         ),
       );
     }
@@ -83,11 +109,7 @@ class _ArScreenState extends State<ArScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          ArViewWidget(
-            onPlatformViewCreated: (int id) {
-              _syncRadii();
-            },
-          ),
+          ArViewWidget(onPlatformViewCreated: (int id) => _syncRadii()),
 
           // Top HUD
           SafeArea(
@@ -129,80 +151,66 @@ class _ArScreenState extends State<ArScreen> {
                   const SizedBox(height: 10),
                   StatusBanner(status: status),
                   const SizedBox(height: 10),
-                  if (!status.hasReferencePoint)
-                    ReferencePrompt(
-                      enabled: status.canPlaceReference,
-                      onConfirm: _confirmAtCentre,
-                    ),
+
+                  // Step instruction banner
+                  _stepBanner(status),
+
                   const Spacer(),
+
+                  // Crosshair
                   IgnorePointer(
                     child: Align(
                       alignment: Alignment.center,
                       child: Container(
-                        width: 26,
-                        height: 26,
+                        width: 34,
+                        height: 34,
                         decoration: BoxDecoration(
                           border: Border.all(
-                            color: status.canPlaceReference
+                            color: _step == _Step.captureBoomTip
                                 ? AppTheme.accent
-                                : Colors.white38,
+                                : Colors.white54,
                             width: 1.6,
                           ),
                           shape: BoxShape.circle,
                         ),
+                        child: Center(
+                          child: Container(
+                            width: 4,
+                            height: 4,
+                            decoration: const BoxDecoration(
+                              color: AppTheme.accent,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
+
                   const Spacer(),
+
                   ReadoutPanel(
                     result: _geometry.result,
                     status: status,
                     showBoundary: _geometry.showBoundary,
                   ),
                   const SizedBox(height: 10),
-                  Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: ControlPanel(
-                          boomLength: _geometry.config.boomLength,
-                          boomAngleDegrees: _geometry.config.boomAngleDegrees,
-                          margin: _geometry.config.margin,
-                          showBoundary: _geometry.showBoundary,
-                          onBoomLengthChanged: _geometry.setBoomLength,
-                          onAngleChanged: _geometry.setBoomAngleDegrees,
-                          onMarginChanged: _geometry.setMargin,
-                          onShowBoundaryChanged: (bool v) {
-                            _geometry.setShowBoundary(v);
-                            _syncRadii();
-                          },
-                        ),
-                      ),
-                    ],
+                  ControlPanel(
+                    boomLength: _geometry.config.boomLength,
+                    boomAngleDegrees: _measuredAngleDeg ??
+                        _geometry.config.boomAngleDegrees,
+                    margin: _geometry.config.margin,
+                    showBoundary: _geometry.showBoundary,
+                    onBoomLengthChanged: _geometry.setBoomLength,
+                    onAngleChanged: _geometry.setBoomAngleDegrees,
+                    onMarginChanged: _geometry.setMargin,
+                    onShowBoundaryChanged: (bool v) {
+                      _geometry.setShowBoundary(v);
+                      _syncRadii();
+                    },
                   ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _resetReference,
-                          icon: const Icon(Icons.restart_alt, size: 16),
-                          label: const Text(
-                            'RESET REFERENCE',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.7,
-                            ),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: Colors.white70,
-                            side: const BorderSide(color: Colors.white24),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
+                  const SizedBox(height: 8),
+                  _actionButtons(),
                   const SizedBox(height: 10),
                 ],
               ),
@@ -210,6 +218,109 @@ class _ArScreenState extends State<ArScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _stepBanner(ArStatusSnapshot status) {
+    switch (_step) {
+      case _Step.placeSlewCentre:
+        return _banner(
+          'Step 1 of 2',
+          'Point at the crane slew centre on the ground and tap, or press USE SCREEN CENTRE.',
+          AppTheme.accent,
+        );
+      case _Step.captureBoomTip:
+        return _banner(
+          'Step 2 of 2',
+          'Aim the crosshair at the TOP of the boom (the tip) and press CAPTURE BOOM TIP.',
+          AppTheme.secondary,
+        );
+      case _Step.done:
+        return _banner(
+          'Boom captured',
+          'Angle: ${(_measuredAngleDeg ?? 0).toStringAsFixed(1)}° · '
+              'Tip height: ${(_measuredTipHeight ?? 0).toStringAsFixed(2)} m',
+          AppTheme.success,
+        );
+    }
+  }
+
+  Widget _banner(String title, String body, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.55)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.5,
+              color: color,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            body,
+            style: const TextStyle(
+                fontSize: 11.5, color: Colors.white70, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _actionButtons() {
+    return Row(
+      children: <Widget>[
+        if (_step == _Step.captureBoomTip)
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: _captureBoomTip,
+              icon: const Icon(Icons.center_focus_strong, size: 18),
+              label: const Text('CAPTURE BOOM TIP'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppTheme.accent,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _reset,
+              icon: const Icon(Icons.restart_alt, size: 16),
+              label: const Text('RESET'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white70,
+                side: const BorderSide(color: Colors.white24),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        if (_step != _Step.placeSlewCentre) ...[
+          const SizedBox(width: 8),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _reset,
+              icon: const Icon(Icons.restart_alt, size: 16),
+              label: const Text('RESET'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.white70,
+                side: const BorderSide(color: Colors.white24),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
