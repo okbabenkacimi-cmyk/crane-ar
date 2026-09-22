@@ -13,15 +13,8 @@ import com.google.ar.core.exceptions.UnavailableDeviceNotCompatibleException
 import com.google.ar.core.exceptions.UnavailableSdkTooOldException
 
 /**
- * Owns the ARCore [Session] and its configuration.
- *
- * This version enables:
- *  - Raw Depth API (Config.DepthMode.AUTOMATIC) so the renderer can read
- *    per-pixel confidence and reject unreliable depth readings.
- *  - Geospatial mode (VPS) where supported, giving longer-range depth on
- *    sites with Google Street View coverage.
- *  - Instant Placement disabled, which removes a common source of
- *    unreliable anchors on featureless ground.
+ * Owns the ARCore [Session]. Every failure path is now recorded in [lastError]
+ * and reported to the Flutter UI via ArView.postStatus.
  */
 class ArSessionManager(private val activity: Activity) {
 
@@ -32,7 +25,6 @@ class ArSessionManager(private val activity: Activity) {
 
     private var installRequested = false
 
-    /** Thrown out to the caller so the UI can surface a readable message. */
     var lastError: String? = null
         private set
 
@@ -43,20 +35,35 @@ class ArSessionManager(private val activity: Activity) {
         }
 
         try {
-            when (ArCoreApk.getInstance().requestInstall(activity, !installRequested)) {
+            val availability = ArCoreApk.getInstance().checkAvailability(activity)
+            if (availability.isTransient) {
+                lastError = "Checking ARCore availability… please retry in a moment."
+                return
+            }
+
+            val installStatus = ArCoreApk.getInstance()
+                .requestInstall(activity, !installRequested)
+            when (installStatus) {
                 ArCoreApk.InstallStatus.INSTALL_REQUESTED -> {
                     installRequested = true
+                    lastError = "ARCore installation required. " +
+                        "Install 'Google Play Services for AR' from the " +
+                        "Play Store, then reopen this screen."
                     return
                 }
                 ArCoreApk.InstallStatus.INSTALLED -> Unit
-                null -> return
+                null -> {
+                    lastError = "ARCore availability unknown. Try again."
+                    return
+                }
             }
 
             if (ContextCompat.checkSelfPermission(
                     activity, Manifest.permission.CAMERA
                 ) != PackageManager.PERMISSION_GRANTED
             ) {
-                lastError = "Camera permission not granted."
+                lastError = "Camera permission denied. " +
+                    "Grant camera access in Settings and reopen."
                 return
             }
 
@@ -67,29 +74,26 @@ class ArSessionManager(private val activity: Activity) {
                 lightEstimationMode = Config.LightEstimationMode.DISABLED
                 updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
                 focusMode = Config.FocusMode.AUTO
-
-                // NEW — enable the Raw Depth API so ArRenderer can filter
-                // depth readings by confidence on featureless ground.
                 depthMode = Config.DepthMode.AUTOMATIC
             }
             newSession.configure(config)
 
-            // NEW — try to enable Geospatial (VPS) mode for longer-range depth.
-            // Not all devices / ARCore versions support it; safe to ignore.
             try {
                 val geoConfig = newSession.config
                 geoConfig.geospatialMode = Config.GeospatialMode.ENABLED
                 newSession.configure(geoConfig)
             } catch (e: Exception) {
-                // Geospatial mode unsupported here — continue without it.
+                // Geospatial optional — ignore on unsupported devices.
             }
 
             session = newSession
             lastError = null
         } catch (e: UnavailableArcoreNotInstalledException) {
-            lastError = "ARCore is not installed on this device."
+            lastError = "ARCore is not installed. Open the Play Store and " +
+                "install 'Google Play Services for AR'."
         } catch (e: UnavailableApkTooOldException) {
-            lastError = "Google Play Services for AR is out of date."
+            lastError = "Google Play Services for AR is out of date. " +
+                "Update it in the Play Store."
         } catch (e: UnavailableSdkTooOldException) {
             lastError = "This app's ARCore SDK is too old."
         } catch (e: UnavailableDeviceNotCompatibleException) {
