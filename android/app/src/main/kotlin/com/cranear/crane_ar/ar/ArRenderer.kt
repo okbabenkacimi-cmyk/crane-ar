@@ -4,7 +4,6 @@ import android.content.Context
 import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.opengl.Matrix
-import com.google.ar.core.Anchor
 import com.google.ar.core.Config
 import com.google.ar.core.Frame
 import com.google.ar.core.Plane
@@ -18,6 +17,11 @@ import javax.microedition.khronos.opengles.GL10
 
 /**
  * The AR render loop. Runs on the GL thread.
+ *
+ * This version additionally measures the ratio of reliable depth pixels in
+ * every frame using the Raw Depth API. When the ratio drops below a
+ * threshold (featureless ground), it emits a "depthWarning" event that the
+ * Flutter UI can surface to the user.
  */
 class ArRenderer(
     private val context: Context,
@@ -40,6 +44,11 @@ class ArRenderer(
 
     private var lastReportedSignature: String = ""
     private var lastReportMillis: Long = 0L
+
+    // NEW — last measured depth reliability ratio (0.0 = all unreliable,
+    // 1.0 = all reliable). Used to warn the user on featureless ground.
+    private var lastDepthReliableRatio: Float = 1.0f
+    private var lastDepthWarningShown: Boolean = false
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
         GLES20.glClearColor(0f, 0f, 0f, 1f)
@@ -70,6 +79,10 @@ class ArRenderer(
             session.setCameraTextureName(backgroundRenderer.textureId)
             val frame = session.update()
             val camera = frame.camera
+
+            // NEW — measure how much of the frame has reliable depth data.
+            lastDepthReliableRatio = measureDepthReliability(frame)
+            maybeEmitDepthWarning()
 
             if (camera.trackingState == TrackingState.PAUSED) {
                 reportStatus(frame, horizontalPlaneCount(frame), hasReference = false)
@@ -119,6 +132,75 @@ class ArRenderer(
         }
     }
 
+    // -----------------------------------------------------------------------
+    // NEW — Raw Depth API based reliability measurement.
+    // -----------------------------------------------------------------------
+
+    /**
+     * Asks ARCore for the raw depth image and its confidence image, then
+     * returns the fraction of pixels whose confidence is at or above 128
+     * (half of 255). Low values mean the surface is too featureless for
+     * reliable depth — typical on sand, gravel and bare earth.
+     */
+    private fun measureDepthReliability(frame: Frame): Float {
+        return try {
+            val depthImage = frame.acquireRawDepthImage16Bits()
+            val confidenceImage = frame.acquireRawDepthConfidenceImage()
+
+            val confidenceBuffer = confidenceImage.planes[0].buffer
+            val bytes = ByteArray(confidenceBuffer.remaining())
+            confidenceBuffer.get(bytes)
+
+            var reliable = 0
+            for (b in bytes) {
+                if ((b.toInt() and 0xFF) >= 128) reliable++
+            }
+
+            depthImage.close()
+            confidenceImage.close()
+
+            if (bytes.isNotEmpty()) {
+                reliable.toFloat() / bytes.size.toFloat()
+            } else {
+                0f
+            }
+        } catch (e: Exception) {
+            // Depth not available this frame (frame not ready, unsupported
+            // device, or depth mode disabled). Treat as unknown, not as bad.
+            1.0f
+        }
+    }
+
+    /**
+     * Emits a single "depthWarning" event when depth reliability drops below
+     * the threshold, and another "depthOk" event when it recovers. Avoids
+     * spamming the Flutter UI every frame.
+     */
+    private fun maybeEmitDepthWarning() {
+        val unreliable = lastDepthReliableRatio < 0.20f
+        if (unreliable && !lastDepthWarningShown) {
+            lastDepthWarningShown = true
+            ArCoreHolder.currentView?.postStatus(
+                mapOf(
+                    "event" to "depthWarning",
+                    "message" to
+                        "Surface texture too low for accurate depth. " +
+                        "Move the camera to a more textured area."
+                )
+            )
+        } else if (!unreliable && lastDepthWarningShown) {
+            lastDepthWarningShown = false
+            ArCoreHolder.currentView?.postStatus(
+                mapOf(
+                    "event" to "depthOk",
+                    "message" to "Depth reliability restored."
+                )
+            )
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Input handling.
     // -----------------------------------------------------------------------
 
     private fun processPendingInput(frame: Frame) {
@@ -182,6 +264,10 @@ class ArRenderer(
         return count
     }
 
+    // -----------------------------------------------------------------------
+    // Status reporting.
+    // -----------------------------------------------------------------------
+
     private fun reportStatus(
         frame: Frame,
         planeCount: Int,
@@ -234,7 +320,8 @@ class ArRenderer(
                 "ground" to ground,
                 "horizontalPlanes" to planes,
                 "hasReference" to hasReference,
-                "referenceTracking" to referenceTracking
+                "referenceTracking" to referenceTracking,
+                "depthReliability" to lastDepthReliableRatio
             )
         )
     }
