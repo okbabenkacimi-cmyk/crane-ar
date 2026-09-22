@@ -1,6 +1,7 @@
 package com.cranear.crane_ar.ar
 
 import android.app.Activity
+import android.graphics.PixelFormat
 import android.os.Handler
 import android.os.Looper
 import android.opengl.GLSurfaceView
@@ -10,6 +11,10 @@ import io.flutter.plugin.platform.PlatformView
 
 /**
  * Hybrid-composition PlatformView hosting the ARCore GLSurfaceView.
+ *
+ * FIX: previously this class set PixelFormat.TRANSLUCENT on the surface,
+ * which made the camera feed invisible (rendered fully transparent on top
+ * of Flutter's black background). It is now OPAQUE.
  */
 class ArView(private val activity: Activity) : PlatformView {
 
@@ -27,7 +32,9 @@ class ArView(private val activity: Activity) : PlatformView {
         glSurfaceView.preserveEGLContextOnPause = true
         glSurfaceView.setEGLContextClientVersion(2)
         glSurfaceView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
-        glSurfaceView.holder.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
+
+        // THE FIX — was TRANSLUCENT before, which hid the camera feed.
+        glSurfaceView.holder.setFormat(PixelFormat.OPAQUE)
 
         renderer = ArRenderer(activity, sessionManager, sceneState)
         glSurfaceView.setRenderer(renderer)
@@ -50,12 +57,7 @@ class ArView(private val activity: Activity) : PlatformView {
         glSurfaceView.onResume()
         sessionManager.resume()
         sessionManager.lastError?.let { error ->
-            postStatus(
-                mapOf(
-                    "event" to "error",
-                    "message" to error
-                )
-            )
+            postStatus(mapOf("event" to "error", "message" to error))
         }
     }
 
@@ -76,8 +78,6 @@ class ArView(private val activity: Activity) : PlatformView {
         glSurfaceView.onPause()
     }
 
-    // ---- Commands coming from Flutter ---------------------------------------
-
     fun updateRadii(work: Float, boundary: Float, showBoundary: Boolean) {
         sceneState.workRadius = work
         sceneState.boundaryRadius = boundary
@@ -87,6 +87,8 @@ class ArView(private val activity: Activity) : PlatformView {
     fun resetReference() {
         sceneState.referenceAnchor?.detach()
         sceneState.referenceAnchor = null
+        sceneState.boomTipOffsetY = 0f
+        sceneState.boomAngleDegrees = 0f
         postStatus(
             mapOf(
                 "event" to "status",
@@ -105,13 +107,20 @@ class ArView(private val activity: Activity) : PlatformView {
         return true
     }
 
+    /**
+     * Tells the renderer to capture the current screen centre as a ray
+     * toward the boom tip. The renderer will then compute the boom tip
+     * position by intersecting the ray with a sphere of radius L (boom
+     * length) centred on the slew anchor.
+     */
+    fun captureBoomTip(): Boolean {
+        if (!attached) return false
+        sceneState.pendingBoomTipCapture = true
+        return true
+    }
+
     fun onReferenceEstablished() {
-        postStatus(
-            mapOf(
-                "event" to "reference",
-                "hasReference" to true
-            )
-        )
+        postStatus(mapOf("event" to "reference", "hasReference" to true))
     }
 
     fun postStatus(payload: Map<String, Any?>) {
