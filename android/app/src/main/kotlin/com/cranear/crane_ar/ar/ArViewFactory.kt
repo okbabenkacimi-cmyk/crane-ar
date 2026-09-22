@@ -12,4 +12,4 @@ class ArViewFactory(private val activity: Activity) :
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView {
         return ArView(activity)
     }
-    }
+}
