@@ -26,6 +26,7 @@ class _ArScreenState extends State<ArScreen> {
   _Step _step = _Step.placeSlewCentre;
   double? _measuredAngleDeg;
   double? _measuredTipHeight;
+  bool _errorDialogShown = false;
 
   @override
   void initState() {
@@ -49,6 +50,33 @@ class _ArScreenState extends State<ArScreen> {
 
   void _onArChanged() {
     if (!mounted) return;
+
+    // Surface native error as a dialog once per screen.
+    final String? err = _ar.nativeError;
+    if (err != null && !_errorDialogShown) {
+      _errorDialogShown = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        showDialog<void>(
+          context: context,
+          builder: (BuildContext ctx) => AlertDialog(
+            backgroundColor: AppTheme.surfaceRaised,
+            title: const Text('AR not available'),
+            content: Text(err),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                  _ar.consumeNativeError();
+                },
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+      });
+    }
+
     setState(() {});
     if (_ar.status.hasReferencePoint && _step == _Step.placeSlewCentre) {
       _step = _Step.captureBoomTip;
@@ -103,116 +131,155 @@ class _ArScreenState extends State<ArScreen> {
   @override
   Widget build(BuildContext context) {
     final ArStatusSnapshot status = _ar.status;
+    final Size size = MediaQuery.of(context).size;
 
     return Scaffold(
       backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          ArViewWidget(onPlatformViewCreated: (int id) => _syncRadii()),
+          // Native AR view — always fills the whole screen.
+          Positioned.fill(
+            child: ArViewWidget(onPlatformViewCreated: (_) => _syncRadii()),
+          ),
 
-          // Top HUD
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Row(
-                    children: <Widget>[
-                      IconButton(
-                        onPressed: () => Navigator.of(context).maybePop(),
-                        icon: const Icon(Icons.arrow_back,
-                            color: Colors.white, size: 20),
-                        style: IconButton.styleFrom(
-                          backgroundColor: Colors.black.withOpacity(0.5),
-                        ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.55),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: const Text(
-                          'ADVISORY VISUALIZATION',
-                          style: TextStyle(
-                            fontSize: 9.5,
-                            letterSpacing: 1.1,
-                            fontWeight: FontWeight.w700,
-                            color: AppTheme.accent,
-                          ),
-                        ),
-                      ),
-                    ],
+          // Crosshair — centered, non-interactive.
+          Center(
+            child: IgnorePointer(
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: _step == _Step.captureBoomTip
+                        ? AppTheme.accent
+                        : Colors.white54,
+                    width: 1.6,
                   ),
-                  const SizedBox(height: 10),
-                  StatusBanner(status: status),
-                  const SizedBox(height: 10),
+                  shape: BoxShape.circle,
+                ),
+                child: Center(
+                  child: Container(
+                    width: 4,
+                    height: 4,
+                    decoration: const BoxDecoration(
+                      color: AppTheme.accent,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
 
-                  // Step instruction banner
-                  _stepBanner(status),
-
-                  const Spacer(),
-
-                  // Crosshair
-                  IgnorePointer(
-                    child: Align(
-                      alignment: Alignment.center,
-                      child: Container(
-                        width: 34,
-                        height: 34,
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: _step == _Step.captureBoomTip
-                                ? AppTheme.accent
-                                : Colors.white54,
-                            width: 1.6,
+          // Top HUD (fixed).
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        IconButton(
+                          onPressed: () => Navigator.of(context).maybePop(),
+                          icon: const Icon(Icons.arrow_back,
+                              color: Colors.white, size: 20),
+                          style: IconButton.styleFrom(
+                            backgroundColor:
+                                Colors.black.withOpacity(0.5),
                           ),
-                          shape: BoxShape.circle,
                         ),
-                        child: Center(
-                          child: Container(
-                            width: 4,
-                            height: 4,
-                            decoration: const BoxDecoration(
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.55),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            'ADVISORY VISUALIZATION',
+                            style: TextStyle(
+                              fontSize: 9.5,
+                              letterSpacing: 1.1,
+                              fontWeight: FontWeight.w700,
                               color: AppTheme.accent,
-                              shape: BoxShape.circle,
                             ),
                           ),
                         ),
-                      ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    StatusBanner(status: status),
+                    const SizedBox(height: 10),
+                    _stepBanner(status),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // Bottom HUD — scrollable so nothing is cut off.
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: SafeArea(
+              top: false,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: size.height * 0.62,
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: <Color>[
+                        Colors.transparent,
+                        Colors.black.withOpacity(0.85),
+                        Colors.black,
+                      ],
                     ),
                   ),
-
-                  const Spacer(),
-
-                  ReadoutPanel(
-                    result: _geometry.result,
-                    status: status,
-                    showBoundary: _geometry.showBoundary,
+                  child: SingleChildScrollView(
+                    physics: const BouncingScrollPhysics(),
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        ReadoutPanel(
+                          result: _geometry.result,
+                          status: status,
+                          showBoundary: _geometry.showBoundary,
+                        ),
+                        const SizedBox(height: 10),
+                        ControlPanel(
+                          boomLength: _geometry.config.boomLength,
+                          boomAngleDegrees: _measuredAngleDeg ??
+                              _geometry.config.boomAngleDegrees,
+                          margin: _geometry.config.margin,
+                          showBoundary: _geometry.showBoundary,
+                          onBoomLengthChanged: _geometry.setBoomLength,
+                          onAngleChanged: _geometry.setBoomAngleDegrees,
+                          onMarginChanged: _geometry.setMargin,
+                          onShowBoundaryChanged: (bool v) {
+                            _geometry.setShowBoundary(v);
+                            _syncRadii();
+                          },
+                        ),
+                        const SizedBox(height: 10),
+                        _actionButtons(),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 10),
-                  ControlPanel(
-                    boomLength: _geometry.config.boomLength,
-                    boomAngleDegrees: _measuredAngleDeg ??
-                        _geometry.config.boomAngleDegrees,
-                    margin: _geometry.config.margin,
-                    showBoundary: _geometry.showBoundary,
-                    onBoomLengthChanged: _geometry.setBoomLength,
-                    onAngleChanged: _geometry.setBoomAngleDegrees,
-                    onMarginChanged: _geometry.setMargin,
-                    onShowBoundaryChanged: (bool v) {
-                      _geometry.setShowBoundary(v);
-                      _syncRadii();
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  _actionButtons(),
-                  const SizedBox(height: 10),
-                ],
+                ),
               ),
             ),
           ),
@@ -249,7 +316,7 @@ class _ArScreenState extends State<ArScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.14),
+        color: Colors.black.withOpacity(0.72),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: color.withOpacity(0.55)),
       ),
