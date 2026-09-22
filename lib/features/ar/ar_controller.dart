@@ -24,7 +24,17 @@ class ArController extends ChangeNotifier {
   bool _initialized = false;
   bool get initialized => _initialized;
 
-  // ---- Measured boom geometry (from native boom-tip capture) -----------
+  // ---- Native error surfaced to the UI ---------------------------------
+  String? _nativeError;
+  String? get nativeError => _nativeError;
+
+  String? consumeNativeError() {
+    final String? e = _nativeError;
+    _nativeError = null;
+    return e;
+  }
+
+  // ---- Measured boom geometry (from boom-tip capture) ------------------
   double? _measuredAngleDeg;
   double? get measuredAngleDeg => _measuredAngleDeg;
 
@@ -37,20 +47,15 @@ class ArController extends ChangeNotifier {
   double? _measuredBoundaryRadius;
   double? get measuredBoundaryRadius => _measuredBoundaryRadius;
 
-  String? _error;
-
-  String? consumeError() {
-    final String? e = _error;
-    _error = null;
-    return e;
-  }
+  bool _sessionReady = false;
+  bool get sessionReady => _sessionReady;
 
   Future<bool> prepare() async {
-    _error = null;
+    _nativeError = null;
     try {
       _arCoreSupported = await _bridge.isArCoreSupported();
       if (!_arCoreSupported) {
-        _error = 'This device does not support ARCore. '
+        _nativeError = 'This device does not support ARCore. '
             'Install/update "Google Play Services for AR" and retry.';
         _initialized = true;
         notifyListeners();
@@ -58,13 +63,13 @@ class ArController extends ChangeNotifier {
       }
       _permissionGranted = await _bridge.requestCameraPermission();
       if (!_permissionGranted) {
-        _error = 'Camera permission is required for AR ground tracking.';
+        _nativeError = 'Camera permission is required for AR ground tracking.';
         _initialized = true;
         notifyListeners();
         return false;
       }
     } catch (e) {
-      _error = 'ARCore initialisation failed: $e';
+      _nativeError = 'ARCore initialisation failed: $e';
       _initialized = true;
       notifyListeners();
       return false;
@@ -86,10 +91,17 @@ class ArController extends ChangeNotifier {
             _status = _status.copyWith(hasReferencePoint: true);
             notifyListeners();
             break;
+          case 'sessionReady':
+            _sessionReady = true;
+            notifyListeners();
+            break;
+          case 'error':
+            _nativeError = (event['message'] as String?) ??
+                'Unknown native AR error.';
+            notifyListeners();
+            break;
           case 'depthWarning':
           case 'depthOk':
-          case 'error':
-            // Handled at the presentation layer if desired.
             break;
           case 'status':
           default:
@@ -98,7 +110,7 @@ class ArController extends ChangeNotifier {
         }
       },
       onError: (Object e) {
-        _error = 'AR status stream error: $e';
+        _nativeError = 'AR status stream error: $e';
         notifyListeners();
       },
     );
@@ -115,9 +127,7 @@ class ArController extends ChangeNotifier {
   Future<void> setBoomLength(double metres) async {
     try {
       await _bridge.setBoomLength(metres);
-    } catch (_) {
-      // Native view may not be attached yet; it re-syncs on creation.
-    }
+    } catch (_) {}
   }
 
   Future<void> setBoundaryExtra(double metres) async {
@@ -139,9 +149,7 @@ class ArController extends ChangeNotifier {
         boundaryRadius: boundaryRadius,
         showBoundary: showBoundary,
       );
-    } catch (_) {
-      // The native AR view may not be attached yet; it re-syncs on creation.
-    }
+    } catch (_) {}
   }
 
   Future<void> resetReference() async {
