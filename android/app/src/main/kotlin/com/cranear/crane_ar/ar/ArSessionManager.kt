@@ -57,6 +57,8 @@ class ArSessionManager(private val activity: Activity) {
                 planeFindingMode = Config.PlaneFindingMode.HORIZONTAL
                 lightEstimationMode = Config.LightEstimationMode.DISABLED
                 updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
+                depthMode = Config.DepthMode.AUTOMATIC
+                instantPlacementMode = Config.InstantPlacementMode.DISABLED
                 focusMode = Config.FocusMode.AUTO
             }
             newSession.configure(config)
