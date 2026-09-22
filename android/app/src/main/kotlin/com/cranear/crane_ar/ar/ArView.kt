@@ -11,10 +11,6 @@ import io.flutter.plugin.platform.PlatformView
 
 /**
  * Hybrid-composition PlatformView hosting the ARCore GLSurfaceView.
- *
- * FIX: previously this class set PixelFormat.TRANSLUCENT on the surface,
- * which made the camera feed invisible (rendered fully transparent on top
- * of Flutter's black background). It is now OPAQUE.
  */
 class ArView(private val activity: Activity) : PlatformView {
 
@@ -33,7 +29,8 @@ class ArView(private val activity: Activity) : PlatformView {
         glSurfaceView.setEGLContextClientVersion(2)
         glSurfaceView.setEGLConfigChooser(8, 8, 8, 8, 16, 0)
 
-        // THE FIX — was TRANSLUCENT before, which hid the camera feed.
+        // FIX: Set the surface format to OPAQUE so the camera feed is visible.
+        // Previously, TRANSLUCENT made it invisible.
         glSurfaceView.holder.setFormat(PixelFormat.OPAQUE)
 
         renderer = ArRenderer(activity, sessionManager, sceneState)
@@ -78,10 +75,22 @@ class ArView(private val activity: Activity) : PlatformView {
         glSurfaceView.onPause()
     }
 
+    // ---- Public methods called from MainActivity -------------------------
+
     fun updateRadii(work: Float, boundary: Float, showBoundary: Boolean) {
         sceneState.workRadius = work
         sceneState.boundaryRadius = boundary
         sceneState.showBoundary = showBoundary
+    }
+
+    fun updateBoomLength(v: Float) {
+        sceneState.boomLength = v
+    }
+
+    fun updateBoundaryExtra(v: Float) {
+        sceneState.boundaryRadiusExtra = v
+        // Recompute boundary from current work radius
+        sceneState.boundaryRadius = sceneState.workRadius + v
     }
 
     fun resetReference() {
