@@ -10,7 +10,7 @@ class ArController extends ChangeNotifier {
   ArController({ArBridge? bridge}) : _bridge = bridge ?? ArBridge();
 
   final ArBridge _bridge;
-  StreamSubscription<ArStatusSnapshot>? _subscription;
+  StreamSubscription<Map<dynamic, dynamic>>? _subscription;
 
   ArStatusSnapshot _status = ArStatusSnapshot.initial;
   ArStatusSnapshot get status => _status;
@@ -24,16 +24,27 @@ class ArController extends ChangeNotifier {
   bool _initialized = false;
   bool get initialized => _initialized;
 
+  // ---- Measured boom geometry (from native boom-tip capture) -----------
+  double? _measuredAngleDeg;
+  double? get measuredAngleDeg => _measuredAngleDeg;
+
+  double? _measuredTipHeight;
+  double? get measuredTipHeight => _measuredTipHeight;
+
+  double? _measuredWorkRadius;
+  double? get measuredWorkRadius => _measuredWorkRadius;
+
+  double? _measuredBoundaryRadius;
+  double? get measuredBoundaryRadius => _measuredBoundaryRadius;
+
   String? _error;
 
-  /// Reads a stored error message (if any) and clears it.
   String? consumeError() {
     final String? e = _error;
     _error = null;
     return e;
   }
 
-  /// Verifies ARCore availability and camera permission.
   Future<bool> prepare() async {
     _error = null;
     try {
@@ -63,12 +74,28 @@ class ArController extends ChangeNotifier {
     return true;
   }
 
-  /// Begins consuming native status events.
   void startListening() {
     _subscription ??= _bridge.statusStream().listen(
-      (ArStatusSnapshot snapshot) {
-        _status = snapshot;
-        notifyListeners();
+      (Map<dynamic, dynamic> event) {
+        final String evt = (event['event'] as String?) ?? 'status';
+        switch (evt) {
+          case 'boomTip':
+            _handleBoomTipEvent(event);
+            break;
+          case 'reference':
+            _status = _status.copyWith(hasReferencePoint: true);
+            notifyListeners();
+            break;
+          case 'depthWarning':
+          case 'depthOk':
+          case 'error':
+            // Handled at the presentation layer if desired.
+            break;
+          case 'status':
+          default:
+            _status = ArStatusSnapshot.fromMap(event);
+            notifyListeners();
+        }
       },
       onError: (Object e) {
         _error = 'AR status stream error: $e';
@@ -76,6 +103,30 @@ class ArController extends ChangeNotifier {
       },
     );
   }
+
+  void _handleBoomTipEvent(Map<dynamic, dynamic> event) {
+    _measuredAngleDeg = (event['boomAngleDegrees'] as num?)?.toDouble();
+    _measuredTipHeight = (event['boomTipHeight'] as num?)?.toDouble();
+    _measuredWorkRadius = (event['workRadius'] as num?)?.toDouble();
+    _measuredBoundaryRadius = (event['boundaryRadius'] as num?)?.toDouble();
+    notifyListeners();
+  }
+
+  Future<void> setBoomLength(double metres) async {
+    try {
+      await _bridge.setBoomLength(metres);
+    } catch (_) {
+      // Native view may not be attached yet; it re-syncs on creation.
+    }
+  }
+
+  Future<void> setBoundaryExtra(double metres) async {
+    try {
+      await _bridge.setBoundaryExtra(metres);
+    } catch (_) {}
+  }
+
+  Future<bool> captureBoomTip() => _bridge.captureBoomTip();
 
   Future<void> pushRadii({
     required double workRadius,
@@ -93,7 +144,17 @@ class ArController extends ChangeNotifier {
     }
   }
 
-  Future<void> resetReference() => _bridge.resetReference();
+  Future<void> resetReference() async {
+    try {
+      await _bridge.resetReference();
+    } catch (_) {}
+    _measuredAngleDeg = null;
+    _measuredTipHeight = null;
+    _measuredWorkRadius = null;
+    _measuredBoundaryRadius = null;
+    _status = _status.copyWith(hasReferencePoint: false);
+    notifyListeners();
+  }
 
   Future<bool> confirmReferenceAtCenter() =>
       _bridge.confirmReferenceAtScreenCenter();
