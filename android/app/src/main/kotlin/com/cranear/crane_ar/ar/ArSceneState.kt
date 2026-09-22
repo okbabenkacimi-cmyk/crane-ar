@@ -3,13 +3,16 @@ package com.cranear.crane_ar.ar
 import com.google.ar.core.Anchor
 
 /**
- * Shared, thread-safe state between the Flutter-controlled bridge and the
- * GL renderer. Written from the main thread, read from the GL thread.
+ * Shared state between the Flutter-controlled bridge and the GL renderer.
+ * Written from the main thread, read from the GL thread.
  */
 class ArSceneState {
+
+    // ---- Crane reference (slew centre) -----------------------------------
     @Volatile
     var referenceAnchor: Anchor? = null
 
+    // ---- World-space radii -----------------------------------------------
     @Volatile
     var workRadius: Float = 0f
 
@@ -19,16 +22,31 @@ class ArSceneState {
     @Volatile
     var showBoundary: Boolean = true
 
-    /** Pending tap coordinates in pixels; -1 means "no tap". */
+    // ---- Boom geometry (computed by the renderer) ------------------------
+    /** Boom length L in metres (mirrored from Flutter). */
+    @Volatile
+    var boomLength: Float = 20f
+
+    /** Boom elevation above horizontal, degrees. 0 = horizontal, 90 = vertical. */
+    @Volatile
+    var boomAngleDegrees: Float = 0f
+
+    /** Height of the boom tip above the slew anchor, metres. */
+    @Volatile
+    var boomTipOffsetY: Float = 0f
+
+    // ---- Pending user input ----------------------------------------------
     @Volatile
     var pendingTapX: Float = -1f
 
     @Volatile
     var pendingTapY: Float = -1f
 
-    /** When true, the next frame hit-tests the screen centre instead of a tap. */
     @Volatile
     var pendingCentreHitTest: Boolean = false
+
+    @Volatile
+    var pendingBoomTipCapture: Boolean = false
 
     fun queueTap(x: Float, y: Float) {
         pendingTapX = x
