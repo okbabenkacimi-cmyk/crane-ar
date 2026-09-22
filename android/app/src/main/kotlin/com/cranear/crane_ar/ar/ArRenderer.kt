@@ -226,7 +226,6 @@ class ArRenderer(
         val nz = worldDirZ / len
 
         // Solve |camPos + t*dir - slewCentre| = L for t > 0.
-        // Let K = camPos - slewCentre
         val kx = camX - sx
         val ky = camY - sy
         val kz = camZ - sz
