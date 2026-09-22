@@ -22,6 +22,10 @@ class ArSceneState {
     @Volatile
     var showBoundary: Boolean = true
 
+    /** Planning margin M in metres (mirrored from Flutter). */
+    @Volatile
+    var boundaryRadiusExtra: Float = 2f
+
     // ---- Boom geometry (computed by the renderer) ------------------------
     /** Boom length L in metres (mirrored from Flutter). */
     @Volatile
@@ -34,10 +38,6 @@ class ArSceneState {
     /** Height of the boom tip above the slew anchor, metres. */
     @Volatile
     var boomTipOffsetY: Float = 0f
-    
-    /** Planning margin M in metres (mirrored from Flutter). */
-    @Volatile
-    var boundaryRadiusExtra: Float = 2f
 
     // ---- Pending user input ----------------------------------------------
     @Volatile
