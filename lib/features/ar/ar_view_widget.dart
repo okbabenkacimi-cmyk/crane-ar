@@ -1,74 +1,41 @@
+import 'dart:io' show Platform;
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/constants.dart';
 
-/// Thin wrapper around the Flutter <-> native ARCore bridge.
-class ArBridge {
-  ArBridge({
-    MethodChannel? methodChannel,
-    EventChannel? eventChannel,
-  })  : _methods = methodChannel ?? const MethodChannel(ArChannels.methods),
-        _events = eventChannel ?? const EventChannel(ArChannels.events);
+class ArViewWidget extends StatelessWidget {
+  const ArViewWidget({super.key, this.onPlatformViewCreated});
 
-  final MethodChannel _methods;
-  final EventChannel _events;
+  final ValueChanged<int>? onPlatformViewCreated;
 
-  Future<bool> isArCoreSupported() async {
-    final bool? supported =
-        await _methods.invokeMethod<bool>('checkArCoreSupport');
-    return supported ?? false;
-  }
+  @override
+  Widget build(BuildContext context) {
+    if (kIsWeb || !Platform.isAndroid) {
+      return const ColoredBox(
+        color: Colors.black,
+        child: Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              'The AR prototype currently targets Android devices with ARCore.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.white70),
+            ),
+          ),
+        ),
+      );
+    }
 
-  Future<bool> requestCameraPermission() async {
-    final bool? granted =
-        await _methods.invokeMethod<bool>('requestCameraPermission');
-    return granted ?? false;
-  }
-
-  Future<void> setRadii({
-    required double workRadius,
-    required double boundaryRadius,
-    required bool showBoundary,
-  }) async {
-    await _methods.invokeMethod<void>('setRadii', <String, dynamic>{
-      'workRadius': workRadius,
-      'boundaryRadius': boundaryRadius,
-      'showBoundary': showBoundary,
-    });
-  }
-
-  Future<void> setBoomLength(double metres) async {
-    await _methods.invokeMethod<void>(
-      'setBoomLength',
-      <String, dynamic>{'value': metres},
+    return AndroidView(
+      viewType: ArChannels.arViewType,
+      creationParams: const <String, dynamic>{},
+      creationParamsCodec: const StandardMessageCodec(),
+      onPlatformViewCreated: onPlatformViewCreated,
+      gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
     );
-  }
-
-  Future<void> setBoundaryExtra(double metres) async {
-    await _methods.invokeMethod<void>(
-      'setBoundaryExtra',
-      <String, dynamic>{'value': metres},
-    );
-  }
-
-  Future<bool> captureBoomTip() async {
-    final bool? ok = await _methods.invokeMethod<bool>('captureBoomTip');
-    return ok ?? false;
-  }
-
-  Future<void> resetReference() async {
-    await _methods.invokeMethod<void>('resetReference');
-  }
-
-  Future<bool> confirmReferenceAtScreenCenter() async {
-    final bool? placed =
-        await _methods.invokeMethod<bool>('confirmReferenceAtCenter');
-    return placed ?? false;
-  }
-
-  Stream<Map<dynamic, dynamic>> statusStream() {
-    return _events.receiveBroadcastStream().map((dynamic event) {
-      return Map<dynamic, dynamic>.from(event as Map);
-    });
   }
 }
