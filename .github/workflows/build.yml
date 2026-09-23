@@ -48,15 +48,16 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Static analysis
-        run: flutter analyze
-        continue-on-error: true
+      # NEW: this step fails the build immediately if any Dart file has a
+      # real compile error. Info-level style notes are ignored.
+      - name: Strict Dart analysis (fail on errors only)
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Run geometry unit tests
         run: flutter test --reporter expanded
 
       - name: Build release APK
-        run: flutter build apk --release
+        run: flutter build apk --release --verbose
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
