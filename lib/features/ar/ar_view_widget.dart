@@ -3,13 +3,13 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import '../../core/constants.dart';
 
-/// Hosts the native ARCore GLSurfaceView inside the Flutter tree using
-/// hybrid composition, which is required for GLSurfaceView to render.
+/// Hosts the native ARCore GLSurfaceView inside the Flutter tree.
+///
+/// The camera is shown by the native Kotlin side (PixelFormat.OPAQUE).
 class ArViewWidget extends StatelessWidget {
   const ArViewWidget({super.key, this.onPlatformViewCreated});
 
@@ -33,29 +33,12 @@ class ArViewWidget extends StatelessWidget {
       );
     }
 
-    return PlatformViewLink(
+    return AndroidView(
       viewType: ArChannels.arViewType,
-      surfaceFactory: (BuildContext context, PlatformViewController controller) {
-        return AndroidViewSurface(
-          controller: controller as AndroidViewController,
-          gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
-          hitTestBehavior: PlatformViewHitTestBehavior.opaque,
-        );
-      },
-      onCreatePlatformView: (PlatformViewCreationParams params) {
-        return PlatformViewsService.initSurfaceAndroidView(
-          id: params.id,
-          viewType: ArChannels.arViewType,
-          layoutDirection: TextDirection.ltr,
-          creationParams: const <String, dynamic>{},
-          creationParamsCodec: const StandardMessageCodec(),
-        )
-          ..addOnPlatformViewCreatedListener(params.onPlatformViewCreated)
-          ..addOnPlatformViewCreatedListener((int id) {
-            onPlatformViewCreated?.call(id);
-          })
-          ..create();
-      },
+      creationParams: const <String, dynamic>{},
+      creationParamsCodec: const StandardMessageCodec(),
+      onPlatformViewCreated: onPlatformViewCreated,
+      gestureRecognizers: const <Factory<OneSequenceGestureRecognizer>>{},
     );
   }
 }
