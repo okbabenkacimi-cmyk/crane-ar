@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import '../../domain/models/ar_status.dart';
 import 'ar_bridge.dart';
 
-/// Owns AR lifecycle state for the presentation layer.
 class ArController extends ChangeNotifier {
   ArController({ArBridge? bridge}) : _bridge = bridge ?? ArBridge();
 
@@ -24,17 +23,13 @@ class ArController extends ChangeNotifier {
   bool _initialized = false;
   bool get initialized => _initialized;
 
-  // ---- Native error surfaced to the UI ---------------------------------
   String? _nativeError;
   String? get nativeError => _nativeError;
 
-  String? consumeNativeError() {
-    final String? e = _nativeError;
+  void clearNativeError() {
     _nativeError = null;
-    return e;
   }
 
-  // ---- Measured boom geometry (from boom-tip capture) ------------------
   double? _measuredAngleDeg;
   double? get measuredAngleDeg => _measuredAngleDeg;
 
@@ -82,32 +77,7 @@ class ArController extends ChangeNotifier {
   void startListening() {
     _subscription ??= _bridge.statusStream().listen(
       (Map<dynamic, dynamic> event) {
-        final String evt = (event['event'] as String?) ?? 'status';
-        switch (evt) {
-          case 'boomTip':
-            _handleBoomTipEvent(event);
-            break;
-          case 'reference':
-            _status = _status.copyWith(hasReferencePoint: true);
-            notifyListeners();
-            break;
-          case 'sessionReady':
-            _sessionReady = true;
-            notifyListeners();
-            break;
-          case 'error':
-            _nativeError = (event['message'] as String?) ??
-                'Unknown native AR error.';
-            notifyListeners();
-            break;
-          case 'depthWarning':
-          case 'depthOk':
-            break;
-          case 'status':
-          default:
-            _status = ArStatusSnapshot.fromMap(event);
-            notifyListeners();
-        }
+        _handleEvent(event);
       },
       onError: (Object e) {
         _nativeError = 'AR status stream error: $e';
@@ -116,27 +86,68 @@ class ArController extends ChangeNotifier {
     );
   }
 
-  void _handleBoomTipEvent(Map<dynamic, dynamic> event) {
-    _measuredAngleDeg = (event['boomAngleDegrees'] as num?)?.toDouble();
-    _measuredTipHeight = (event['boomTipHeight'] as num?)?.toDouble();
-    _measuredWorkRadius = (event['workRadius'] as num?)?.toDouble();
-    _measuredBoundaryRadius = (event['boundaryRadius'] as num?)?.toDouble();
-    notifyListeners();
+  void _handleEvent(Map<dynamic, dynamic> event) {
+    final String evt = (event['event'] as String?) ?? 'status';
+
+    if (evt == 'boomTip') {
+      _measuredAngleDeg = (event['boomAngleDegrees'] as num?)?.toDouble();
+      _measuredTipHeight = (event['boomTipHeight'] as num?)?.toDouble();
+      _measuredWorkRadius = (event['workRadius'] as num?)?.toDouble();
+      _measuredBoundaryRadius = (event['boundaryRadius'] as num?)?.toDouble();
+      notifyListeners();
+      return;
+    }
+
+    if (evt == 'reference') {
+      _status = _status.copyWith(hasReferencePoint: true);
+      notifyListeners();
+      return;
+    }
+
+    if (evt == 'sessionReady') {
+      _sessionReady = true;
+      notifyListeners();
+      return;
+    }
+
+    if (evt == 'error') {
+      _nativeError =
+          (event['message'] as String?) ?? 'Unknown native AR error.';
+      notifyListeners();
+      return;
+    }
+
+    if (evt == 'status') {
+      _status = ArStatusSnapshot.fromMap(event);
+      notifyListeners();
+      return;
+    }
+    // Any other event type is ignored.
   }
 
   Future<void> setBoomLength(double metres) async {
     try {
       await _bridge.setBoomLength(metres);
-    } catch (_) {}
+    } catch (_) {
+      // Native view not attached yet — ignored.
+    }
   }
 
   Future<void> setBoundaryExtra(double metres) async {
     try {
       await _bridge.setBoundaryExtra(metres);
-    } catch (_) {}
+    } catch (_) {
+      // Native view not attached yet — ignored.
+    }
   }
 
-  Future<bool> captureBoomTip() => _bridge.captureBoomTip();
+  Future<bool> captureBoomTip() async {
+    try {
+      return await _bridge.captureBoomTip();
+    } catch (_) {
+      return false;
+    }
+  }
 
   Future<void> pushRadii({
     required double workRadius,
@@ -149,7 +160,9 @@ class ArController extends ChangeNotifier {
         boundaryRadius: boundaryRadius,
         showBoundary: showBoundary,
       );
-    } catch (_) {}
+    } catch (_) {
+      // Native view not attached yet — ignored.
+    }
   }
 
   Future<void> resetReference() async {
@@ -164,8 +177,13 @@ class ArController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> confirmReferenceAtCenter() =>
-      _bridge.confirmReferenceAtScreenCenter();
+  Future<bool> confirmReferenceAtCenter() async {
+    try {
+      return await _bridge.confirmReferenceAtScreenCenter();
+    } catch (_) {
+      return false;
+    }
+  }
 
   @override
   void dispose() {
