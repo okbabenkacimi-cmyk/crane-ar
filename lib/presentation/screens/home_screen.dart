@@ -29,8 +29,9 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _busy = false);
 
     if (!ready) {
-      final String? error = _ar.consumeError();
+      final String? error = _ar.nativeError;
       if (error != null) {
+        _ar.clearNativeError();
         await showDialog<void>(
           context: context,
           builder: (BuildContext ctx) => AlertDialog(
@@ -88,9 +89,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: TextStyle(fontSize: 15, color: Colors.white60),
               ),
               const SizedBox(height: 32),
-              _Bullet(text: 'Establish the crane reference point on real ground'),
-              _Bullet(text: 'Work radius  R = L × cos(θ)'),
-              _Bullet(text: 'Planning boundary  R_boundary = R + M'),
+              const _Bullet(text: 'Establish the crane reference point on real ground'),
+              const _Bullet(text: 'Work radius  R = L × cos(θ)'),
+              const _Bullet(text: 'Planning boundary  R_boundary = R + M'),
               const SizedBox(height: 28),
               Container(
                 padding: const EdgeInsets.all(14),
@@ -100,7 +101,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 child: const Text(
                   AppConstants.advisoryNotice,
-                  style: TextStyle(fontSize: 12, color: Colors.white54, height: 1.45),
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.white54,
+                    height: 1.45,
+                  ),
                 ),
               ),
               const Spacer(flex: 3),
@@ -169,4 +174,4 @@ class _Bullet extends StatelessWidget {
       ),
     );
   }
-}
+}        
