@@ -36,7 +36,9 @@ class _ArScreenState extends State<ArScreen> {
     _ar.startListening();
     _ar.setBoomLength(_geometry.config.boomLength);
     _ar.setBoundaryExtra(_geometry.config.margin);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncRadii());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _syncRadii();
+    });
   }
 
   @override
@@ -51,7 +53,6 @@ class _ArScreenState extends State<ArScreen> {
   void _onArChanged() {
     if (!mounted) return;
 
-    // Surface native error as a dialog once per screen.
     final String? err = _ar.nativeError;
     if (err != null && !_errorDialogShown) {
       _errorDialogShown = true;
@@ -66,8 +67,8 @@ class _ArScreenState extends State<ArScreen> {
             actions: <Widget>[
               TextButton(
                 onPressed: () {
+                  _ar.clearNativeError();
                   Navigator.of(ctx).pop();
-                  _ar.consumeNativeError();
                 },
                 child: const Text('OK'),
               ),
@@ -81,15 +82,17 @@ class _ArScreenState extends State<ArScreen> {
     if (_ar.status.hasReferencePoint && _step == _Step.placeSlewCentre) {
       _step = _Step.captureBoomTip;
     }
-    if (_ar.measuredAngleDeg != null) {
-      _measuredAngleDeg = _ar.measuredAngleDeg;
+    final double? measured = _ar.measuredAngleDeg;
+    if (measured != null) {
+      _measuredAngleDeg = measured;
       _measuredTipHeight = _ar.measuredTipHeight;
       _step = _Step.done;
-      _geometry.setBoomAngleDegrees(_ar.measuredAngleDeg!);
+      _geometry.setBoomAngleDegrees(measured);
     }
   }
 
   void _onGeometryChanged() {
+    if (!mounted) return;
     setState(() {});
     _ar.setBoomLength(_geometry.config.boomLength);
     _ar.setBoundaryExtra(_geometry.config.margin);
@@ -138,12 +141,14 @@ class _ArScreenState extends State<ArScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: <Widget>[
-          // Native AR view — always fills the whole screen.
           Positioned.fill(
-            child: ArViewWidget(onPlatformViewCreated: (_) => _syncRadii()),
+            child: ArViewWidget(
+              onPlatformViewCreated: (int id) {
+                _syncRadii();
+              },
+            ),
           ),
 
-          // Crosshair — centered, non-interactive.
           Center(
             child: IgnorePointer(
               child: Container(
@@ -172,7 +177,6 @@ class _ArScreenState extends State<ArScreen> {
             ),
           ),
 
-          // Top HUD (fixed).
           Positioned(
             top: 0,
             left: 0,
@@ -187,18 +191,24 @@ class _ArScreenState extends State<ArScreen> {
                     Row(
                       children: <Widget>[
                         IconButton(
-                          onPressed: () => Navigator.of(context).maybePop(),
-                          icon: const Icon(Icons.arrow_back,
-                              color: Colors.white, size: 20),
+                          onPressed: () {
+                            Navigator.of(context).maybePop();
+                          },
+                          icon: const Icon(
+                            Icons.arrow_back,
+                            color: Colors.white,
+                            size: 20,
+                          ),
                           style: IconButton.styleFrom(
-                            backgroundColor:
-                                Colors.black.withOpacity(0.5),
+                            backgroundColor: Colors.black.withOpacity(0.5),
                           ),
                         ),
                         const Spacer(),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
+                            horizontal: 10,
+                            vertical: 6,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.black.withOpacity(0.55),
                             borderRadius: BorderRadius.circular(20),
@@ -218,14 +228,13 @@ class _ArScreenState extends State<ArScreen> {
                     const SizedBox(height: 10),
                     StatusBanner(status: status),
                     const SizedBox(height: 10),
-                    _stepBanner(status),
+                    _stepBanner(),
                   ],
                 ),
               ),
             ),
           ),
 
-          // Bottom HUD — scrollable so nothing is cut off.
           Positioned(
             left: 0,
             right: 0,
@@ -288,28 +297,27 @@ class _ArScreenState extends State<ArScreen> {
     );
   }
 
-  Widget _stepBanner(ArStatusSnapshot status) {
-    switch (_step) {
-      case _Step.placeSlewCentre:
-        return _banner(
-          'Step 1 of 2',
-          'Point at the crane slew centre on the ground and tap, or press USE SCREEN CENTRE.',
-          AppTheme.accent,
-        );
-      case _Step.captureBoomTip:
-        return _banner(
-          'Step 2 of 2',
-          'Aim the crosshair at the TOP of the boom (the tip) and press CAPTURE BOOM TIP.',
-          AppTheme.secondary,
-        );
-      case _Step.done:
-        return _banner(
-          'Boom captured',
-          'Angle: ${(_measuredAngleDeg ?? 0).toStringAsFixed(1)}° · '
-              'Tip height: ${(_measuredTipHeight ?? 0).toStringAsFixed(2)} m',
-          AppTheme.success,
-        );
+  Widget _stepBanner() {
+    if (_step == _Step.placeSlewCentre) {
+      return _banner(
+        'Step 1 of 2',
+        'Point at the crane slew centre on the ground and tap, or press USE SCREEN CENTRE.',
+        AppTheme.accent,
+      );
     }
+    if (_step == _Step.captureBoomTip) {
+      return _banner(
+        'Step 2 of 2',
+        'Aim the crosshair at the TOP of the boom (the tip) and press CAPTURE BOOM TIP.',
+        AppTheme.secondary,
+      );
+    }
+    return _banner(
+      'Boom captured',
+      'Angle: ${(_measuredAngleDeg ?? 0).toStringAsFixed(1)}° · '
+          'Tip height: ${(_measuredTipHeight ?? 0).toStringAsFixed(2)} m',
+      AppTheme.success,
+    );
   }
 
   Widget _banner(String title, String body, Color color) {
@@ -336,7 +344,10 @@ class _ArScreenState extends State<ArScreen> {
           Text(
             body,
             style: const TextStyle(
-                fontSize: 11.5, color: Colors.white70, height: 1.4),
+              fontSize: 11.5,
+              color: Colors.white70,
+              height: 1.4,
+            ),
           ),
         ],
       ),
@@ -344,9 +355,9 @@ class _ArScreenState extends State<ArScreen> {
   }
 
   Widget _actionButtons() {
-    return Row(
-      children: <Widget>[
-        if (_step == _Step.captureBoomTip)
+    if (_step == _Step.captureBoomTip) {
+      return Row(
+        children: <Widget>[
           Expanded(
             child: FilledButton.icon(
               onPressed: _captureBoomTip,
@@ -358,21 +369,7 @@ class _ArScreenState extends State<ArScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
-          )
-        else
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: _reset,
-              icon: const Icon(Icons.restart_alt, size: 16),
-              label: const Text('RESET'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: Colors.white70,
-                side: const BorderSide(color: Colors.white24),
-                padding: const EdgeInsets.symmetric(vertical: 12),
-              ),
-            ),
           ),
-        if (_step != _Step.placeSlewCentre) ...[
           const SizedBox(width: 8),
           Expanded(
             child: OutlinedButton.icon(
@@ -387,6 +384,23 @@ class _ArScreenState extends State<ArScreen> {
             ),
           ),
         ],
+      );
+    }
+
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: OutlinedButton.icon(
+            onPressed: _reset,
+            icon: const Icon(Icons.restart_alt, size: 16),
+            label: const Text('RESET'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: Colors.white70,
+              side: const BorderSide(color: Colors.white24),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
       ],
     );
   }
